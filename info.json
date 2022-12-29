@@ -5,7 +5,7 @@
   "author": "raiguard",
   "contact": "https://lists.sr.ht/~raiguard/factorio-mods-discuss",
   "homepage": "https://git.sr.ht/~raiguard/EvenDistributionLite",
-  "description": "Evenly distribute items between entities.",
+  "description": "Evenly distribute items between entities with ctrl+drag.",
   "factorio_version": "1.1",
   "dependencies": [ "base >= 1.1.74", "flib >= 0.12.0" ]
 }
