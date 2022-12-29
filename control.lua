@@ -89,6 +89,27 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 		return
 	end
 
+	-- Get the number of items that were inserted by the fast transfer
+	local new_count = get_item_count(player, selected_state.item_name)
+	local inserted = selected_state.item_count - new_count --[[@as uint]]
+	if inserted == 0 then
+		return
+	end
+
+	-- Remove items from the destination and put them back into the player
+	-- TODO: Preserve hand position
+	entity.remove_item({ name = selected_state.item_name, count = inserted })
+	local new_cursor_count = cursor_stack.valid_for_read and cursor_stack.count or 0
+	local cursor_delta = selected_state.cursor_count - new_cursor_count
+	if cursor_delta > 0 then
+		cursor_stack.set_stack({ name = selected_state.item_name, count = selected_state.cursor_count })
+	end
+	new_count = new_count + cursor_delta
+	if new_count < selected_state.item_count then
+		player.insert({ name = selected_state.item_name, count = selected_state.item_count - new_count })
+	end
+
+	-- Create or retrieve drag state
 	local drag_state = global.drag[e.player_index]
 	if not drag_state then
 		--- @type DragState
@@ -102,27 +123,9 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 		global.drag[e.player_index] = drag_state
 	end
 
-	local new_count = get_item_count(player, drag_state.item_name)
-	local inserted = selected_state.item_count - new_count --[[@as uint]]
-	if inserted == 0 then
-		return
-	end
-
-	-- Remove items from the destination and put them back into the player
-	entity.remove_item({ name = drag_state.item_name, count = inserted })
-	local new_cursor_count = cursor_stack.valid_for_read and cursor_stack.count or 0
-	local cursor_delta = selected_state.cursor_count - new_cursor_count
-	if cursor_delta > 0 then
-		cursor_stack.set_stack({ name = drag_state.item_name, count = selected_state.cursor_count })
-	end
-	new_count = new_count + cursor_delta
-	if new_count < selected_state.item_count then
-		player.insert({ name = drag_state.item_name, count = selected_state.item_count - new_count })
-	end
-
 	drag_state.last_tick = game.tick
 
-	-- Add entity data if needed
+	-- Add entity if needed
 	local entity_data = drag_state.entities[entity.unit_number]
 	if not entity_data then
 		local label = rendering.draw_text({
@@ -132,6 +135,7 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 			target = entity,
 			text = "",
 		})
+		--- @type EntityData
 		entity_data = {
 			count = 0,
 			entity = entity,
@@ -151,7 +155,7 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 		flying_text.destroy()
 	end
 
-	-- Update all item counts
+	-- Update item counts
 	local base = math.floor(selected_state.item_count / drag_state.num_entities) --[[@as uint]]
 	local remainder = selected_state.item_count % drag_state.num_entities
 	for _, entity_data in pairs(drag_state.entities) do
