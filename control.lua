@@ -127,7 +127,6 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 	if not entity_data then
 		local label = rendering.draw_text({
 			color = { r = 1, g = 1, b = 1 },
-			only_in_alt_mode = true,
 			players = { e.player_index },
 			surface = entity.surface,
 			target = entity,
