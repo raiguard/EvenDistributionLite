@@ -9,7 +9,7 @@ game.camera_alt_info = true
 local path = {
 	{
 		on_started = function()
-			game.camera_player_cursor_position = { 0, 4.5 }
+			game.camera_player_cursor_position = { 0, 4 }
 			player.clear_cursor()
 		end,
 		wait_time = 30,
@@ -29,7 +29,7 @@ local path = {
 		wait_time = 120,
 	},
 	{
-		target = { 0, 4.5 },
+		target = { 0, 4 },
 	},
 }
 
