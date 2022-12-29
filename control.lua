@@ -166,12 +166,6 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 	end
 end)
 
-local colors = {
-	white = { r = 1, g = 1, b = 1 },
-	yellow = { r = 1, g = 1 },
-	red = { r = 1 },
-}
-
 --- @param data DragState
 local function finish_drag(data)
 	if not data.player.valid then
@@ -185,16 +179,11 @@ local function finish_drag(data)
 			goto continue
 		end
 		local inserted = entity_data.entity.insert({ name = item_name, count = entity_data.count })
-		local color = colors.white
-		if inserted == 0 then
-			color = colors.red
-		elseif inserted < entity_data.count then
-			color = colors.yellow
-		end
 		local entity = entity_data.entity
 		entity.surface.create_entity({
 			name = "flying-text",
-			color = color,
+			-- Color yellow if inventory limit was reached
+			color = inserted == entity_data.count and { r = 1, g = 1, b = 1 } or { r = 1, g = 1 },
 			position = entity.position,
 			render_player_index = data.player.index,
 			text = { "", "-", inserted, " ", item_localised_name },
