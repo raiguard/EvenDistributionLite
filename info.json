@@ -1,0 +1,11 @@
+{
+  "name": "EvenDistributionLite",
+  "version": "1.0.0",
+  "title": "Even Distribution Lite",
+  "author": "raiguard",
+  "contact": "https://lists.sr.ht/~raiguard/factorio-mods-discuss",
+  "homepage": "https://git.sr.ht/~raiguard/EvenDistributionLite",
+  "description": "Evenly distribute items between entities.",
+  "factorio_version": "1.1",
+  "dependencies": [ "base >= 1.1.74", "flib >= 0.12.0" ]
+}
