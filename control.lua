@@ -4,6 +4,7 @@ local bounding_box = require("__flib__/bounding-box")
 --- @field entities table<uint, EntityData>
 --- @field item_name string
 --- @field last_tick uint
+--- @field mode DistributionMode
 --- @field num_entities integer
 --- @field player LuaPlayer
 
@@ -34,6 +35,12 @@ local function get_item_count(player, item_name)
 	end
 	return count --[[@as uint]]
 end
+
+--- @enum DistributionMode
+local distribution_mode = {
+	balance = 1,
+	even = 2,
+}
 
 script.on_init(function()
 	--- @type table<uint, DragState>
@@ -112,11 +119,16 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 	-- Create or retrieve drag state
 	local drag_state = global.drag[e.player_index]
 	if not drag_state then
+		local mode = distribution_mode.even
+		if new_cursor_count == math.floor(selected_state.cursor_count / 2) then
+			mode = distribution_mode.balance
+		end
 		--- @type DragState
 		drag_state = {
 			entities = {},
 			item_name = selected_state.item_name,
 			last_tick = game.tick,
+			mode = mode,
 			num_entities = 0,
 			player = player,
 		}
