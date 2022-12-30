@@ -159,18 +159,19 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 	-- Get the number of items that were inserted by the fast transfer
 	local new_count = player.get_item_count(selected_state.item_name)
 	local inserted = selected_state.item_count - new_count --[[@as uint]]
-	if inserted == 0 then
-		return
-	end
-
-	-- Remove items from the destination and restore the player's inventory state
-	local spec = { name = selected_state.item_name, count = inserted }
-	entity.remove_item(spec)
-	if cursor_stack.valid_for_read then
-		player.insert(spec)
+	if inserted > 0 then
+		-- Remove items from the destination and restore the player's inventory state
+		local spec = { name = selected_state.item_name, count = inserted }
+		entity.remove_item(spec)
+		if cursor_stack.valid_for_read then
+			player.insert(spec)
+		else
+			cursor_stack.set_stack(spec)
+			player.hand_location = selected_state.hand_location
+		end
 	else
-		cursor_stack.set_stack(spec)
-		player.hand_location = selected_state.hand_location
+		-- The base game won't play the sound, so we have to
+		player.play_sound({ path = "utility/inventory_move" })
 	end
 
 	-- Create or retrieve drag state
@@ -285,20 +286,18 @@ local function finish_drag(drag_state)
 			delta = entity.remove_item({ name = item_name, count = count })
 		end
 
-		if delta == 0 then
-			goto continue
-		end
-
 		-- Insert into or remove from player
-		if to_insert > 0 then
+		if delta > 0 and to_insert > 0 then
 			player_total = player_total - drag_state.player.remove_item({ name = item_name, count = delta })
-		else
+		elseif delta > 0 then
 			player_total = player_total + drag_state.player.insert({ name = item_name, count = delta })
 		end
 
 		-- Show flying text
 		local color = colors.white
-		if delta ~= math.abs(to_insert) then
+		if delta == 0 then
+			color = colors.red
+		elseif delta ~= math.abs(to_insert) then
 			color = colors.yellow
 		end
 		entity.surface.create_entity({
@@ -308,8 +307,6 @@ local function finish_drag(drag_state)
 			render_player_index = drag_state.player.index,
 			text = { "", to_insert > 0 and "-" or "+", delta, " ", item_localised_name },
 		})
-
-		::continue::
 	end
 end
 
