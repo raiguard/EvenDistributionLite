@@ -23,20 +23,38 @@ local colors = {
 	yellow = { r = 1, g = 1 },
 }
 
---- @param player LuaPlayer
+--- @param entities LuaEntity[]
 --- @param item_name string
---- @return uint
-local function get_item_count(player, item_name)
-	local count = 0
-	local cursor_stack = player.cursor_stack
-	if cursor_stack and cursor_stack.valid_for_read and cursor_stack.name == item_name then
-		count = count + cursor_stack.count
+--- @param player_total uint
+--- @return integer[]
+local function get_balanced_distribution(entities, item_name, player_total)
+	local num_entities = #entities
+
+	-- Determine total and individual entity contents
+	--- @type uint[]
+	local entity_counts = {}
+	local total = player_total
+	for i = 1, num_entities do
+		local count = entities[i].get_item_count(item_name)
+		entity_counts[i] = count
+		total = total + count
 	end
-	local main_inventory = player.get_main_inventory()
-	if main_inventory and main_inventory.valid then
-		count = count + main_inventory.get_item_count(item_name)
+
+	-- Get even distribution and calculate deltas for each entity
+	local base = math.floor(total / num_entities)
+	local remainder = total % num_entities
+	--- @type integer[]
+	local out = {}
+	for i = 1, num_entities do
+		local current_count = entity_counts[i]
+		local target_count = base
+		if remainder > 0 then
+			remainder = remainder - 1
+			target_count = target_count + 1
+		end
+		out[i] = target_count - current_count
 	end
-	return count --[[@as uint]]
+	return out
 end
 
 --- @param total uint
@@ -102,7 +120,7 @@ script.on_event(defines.events.on_selected_entity_changed, function(e)
 		cursor_count = cursor_stack.count,
 		entity = selected,
 		hand_location = player.hand_location,
-		item_count = get_item_count(player, cursor_stack.name),
+		item_count = player.get_item_count(cursor_stack.name),
 		item_name = cursor_stack.name,
 		tick = game.tick,
 	}
@@ -139,7 +157,7 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 	end
 
 	-- Get the number of items that were inserted by the fast transfer
-	local new_count = get_item_count(player, selected_state.item_name)
+	local new_count = player.get_item_count(selected_state.item_name)
 	local inserted = selected_state.item_count - new_count --[[@as uint]]
 	if inserted == 0 then
 		return
@@ -197,7 +215,13 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 	validate_entities(drag_state)
 
 	-- Update item counts
-	local counts = get_even_distribution(selected_state.item_count, #entities)
+	local total = selected_state.item_count
+	if drag_state.mode == distribution_mode.balance then
+		for i = 1, #entities do
+			total = total + entities[i].get_item_count(drag_state.item_name)
+		end
+	end
+	local counts = get_even_distribution(total, #entities)
 	for i = 1, #entities do
 		local entity = entities[i]
 		local label = labels[entity.unit_number]
@@ -225,6 +249,7 @@ local function finish_drag(drag_state)
 		return
 	end
 
+	-- Destroy labels
 	for _, label in pairs(drag_state.labels) do
 		if rendering.is_valid(label) then
 			rendering.destroy(label)
@@ -235,26 +260,45 @@ local function finish_drag(drag_state)
 
 	local entities = drag_state.entities
 	local num_entities = #entities
-	local total = get_item_count(drag_state.player, drag_state.item_name)
-	local counts = get_even_distribution(total, num_entities)
 	local item_name = drag_state.item_name
 	local item_localised_name = game.item_prototypes[item_name].localised_name
+
+	-- Calculate entity deltas
+	local counts
+	local player_total = drag_state.player.get_item_count(drag_state.item_name)
+	if drag_state.mode == distribution_mode.even then
+		counts = get_even_distribution(player_total, num_entities)
+	elseif drag_state.mode == distribution_mode.balance then
+		counts = get_balanced_distribution(entities, drag_state.item_name, player_total)
+	end
+
 	for i = 1, num_entities do
 		local entity = entities[i]
 		local to_insert = counts[i]
 
-		-- Insert into entity, remove from player
-		local inserted = entity.insert({ name = item_name, count = to_insert })
-		if inserted == 0 then
+		-- Insert into or remove from entity
+		local delta = 0
+		if to_insert > 0 then
+			delta = entity.insert({ name = item_name, count = to_insert })
+		elseif to_insert < 0 then
+			local count = math.abs(to_insert) --[[@as uint]]
+			delta = entity.remove_item({ name = item_name, count = count })
+		end
+
+		if delta == 0 then
 			goto continue
 		end
-		drag_state.player.remove_item({ name = item_name, count = inserted })
+
+		-- Insert into or remove from player
+		if to_insert > 0 then
+			player_total = player_total - drag_state.player.remove_item({ name = item_name, count = delta })
+		else
+			player_total = player_total + drag_state.player.insert({ name = item_name, count = delta })
+		end
 
 		-- Show flying text
 		local color = colors.white
-		if inserted == 0 then
-			color = colors.red
-		elseif inserted < to_insert then
+		if delta ~= math.abs(to_insert) then
 			color = colors.yellow
 		end
 		entity.surface.create_entity({
@@ -262,7 +306,7 @@ local function finish_drag(drag_state)
 			color = color,
 			position = entity.position,
 			render_player_index = drag_state.player.index,
-			text = { "", -inserted, " ", item_localised_name },
+			text = { "", to_insert > 0 and "-" or "+", delta, " ", item_localised_name },
 		})
 
 		::continue::
