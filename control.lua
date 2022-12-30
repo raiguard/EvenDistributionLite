@@ -159,7 +159,7 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 	local drag_state = global.drag[e.player_index]
 	if not drag_state then
 		local mode = distribution_mode.even
-		if inserted == math.floor(selected_state.cursor_count / 2) then
+		if e.is_split then
 			mode = distribution_mode.balance
 		end
 		--- @type DragState
@@ -202,8 +202,12 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 		local entity = entities[i]
 		local label = labels[entity.unit_number]
 		if not label or not rendering.is_valid(label) then
+			local color = colors.white
+			if drag_state.mode == distribution_mode.balance then
+				color = colors.yellow
+			end
 			label = rendering.draw_text({
-				color = colors.white,
+				color = color,
 				players = { e.player_index },
 				surface = entity.surface,
 				target = entity,
