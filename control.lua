@@ -1,24 +1,27 @@
 local bounding_box = require("__flib__/bounding-box")
 
 --- @class DragState
---- @field entities table<uint, EntityData>
+--- @field entities LuaEntity[]
 --- @field item_name string
+--- @field labels table<uint, uint64>
 --- @field last_tick uint
 --- @field mode DistributionMode
---- @field num_entities integer
 --- @field player LuaPlayer
-
---- @class EntityData
---- @field count uint
---- @field entity LuaEntity
---- @field label uint64
 
 --- @class LastSelectedState
 --- @field cursor_count uint
 --- @field entity LuaEntity
+--- @field hand_location ItemStackLocation
 --- @field item_count uint
 --- @field item_name string
 --- @field tick uint
+
+--- @type table<string, Color>
+local colors = {
+	red = { r = 1 },
+	white = { r = 1, g = 1, b = 1 },
+	yellow = { r = 1, g = 1 },
+}
 
 --- @param player LuaPlayer
 --- @param item_name string
@@ -34,6 +37,38 @@ local function get_item_count(player, item_name)
 		count = count + main_inventory.get_item_count(item_name)
 	end
 	return count --[[@as uint]]
+end
+
+--- @param total uint
+--- @param num_entities integer
+--- @return uint[]
+local function get_even_distribution(total, num_entities)
+	local base = math.floor(total / num_entities)
+	local remainder = total % num_entities
+	--- @type uint[]
+	local out = {}
+	for i = 1, num_entities do
+		local count = base
+		if remainder > 0 then
+			remainder = remainder - 1
+			count = count + 1
+		end
+		out[i] = count --[[@as uint]]
+	end
+	return out
+end
+
+--- @param drag_state DragState
+local function validate_entities(drag_state)
+	local entities = {}
+	local i = 0
+	for _, entity in pairs(drag_state.entities) do
+		if entity.valid then
+			i = i + 1
+			entities[i] = entity
+		end
+	end
+	drag_state.entities = entities
 end
 
 --- @enum DistributionMode
@@ -62,9 +97,11 @@ script.on_event(defines.events.on_selected_entity_changed, function(e)
 		return
 	end
 
+	--- @type LastSelectedState
 	global.last_selected[e.player_index] = {
 		cursor_count = cursor_stack.count,
 		entity = selected,
+		hand_location = player.hand_location,
 		item_count = get_item_count(player, cursor_stack.name),
 		item_name = cursor_stack.name,
 		tick = game.tick,
@@ -82,7 +119,12 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 	end
 
 	local selected_state = global.last_selected[e.player_index]
-	if not selected_state or selected_state.tick ~= game.tick or selected_state.entity ~= entity then
+	if
+		not selected_state
+		or selected_state.tick ~= game.tick
+		or not selected_state.entity.valid
+		or selected_state.entity ~= entity
+	then
 		return
 	end
 
@@ -103,24 +145,21 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 		return
 	end
 
-	-- Remove items from the destination and put them back into the player
-	-- TODO: Preserve hand position
-	entity.remove_item({ name = selected_state.item_name, count = inserted })
-	local new_cursor_count = cursor_stack.valid_for_read and cursor_stack.count or 0
-	local cursor_delta = selected_state.cursor_count - new_cursor_count
-	if cursor_delta > 0 then
-		cursor_stack.set_stack({ name = selected_state.item_name, count = selected_state.cursor_count })
-	end
-	new_count = new_count + cursor_delta
-	if new_count < selected_state.item_count then
-		player.insert({ name = selected_state.item_name, count = selected_state.item_count - new_count })
+	-- Remove items from the destination and restore the player's inventory state
+	local spec = { name = selected_state.item_name, count = inserted }
+	entity.remove_item(spec)
+	if cursor_stack.valid_for_read then
+		player.insert(spec)
+	else
+		cursor_stack.set_stack(spec)
+		player.hand_location = selected_state.hand_location
 	end
 
 	-- Create or retrieve drag state
 	local drag_state = global.drag[e.player_index]
 	if not drag_state then
 		local mode = distribution_mode.even
-		if new_cursor_count == math.floor(selected_state.cursor_count / 2) then
+		if inserted == math.floor(selected_state.cursor_count / 2) then
 			mode = distribution_mode.balance
 		end
 		--- @type DragState
@@ -128,35 +167,14 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 			entities = {},
 			item_name = selected_state.item_name,
 			last_tick = game.tick,
+			labels = {},
 			mode = mode,
-			num_entities = 0,
 			player = player,
 		}
 		global.drag[e.player_index] = drag_state
 	end
 
 	drag_state.last_tick = game.tick
-
-	-- Add entity if needed
-	local entity_data = drag_state.entities[entity.unit_number]
-	if not entity_data then
-		local label = rendering.draw_text({
-			color = { r = 1, g = 1, b = 1 },
-			players = { e.player_index },
-			surface = entity.surface,
-			target = entity,
-			text = "",
-		})
-		--- @type EntityData
-		entity_data = {
-			count = 0,
-			entity = entity,
-			label = label,
-		}
-		drag_state.entities[entity.unit_number] = entity_data
-
-		drag_state.num_entities = drag_state.num_entities + 1
-	end
 
 	-- Destroy flying text from transfer
 	local flying_text = entity.surface.find_entities_filtered({
@@ -167,54 +185,91 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 		flying_text.destroy()
 	end
 
+	local entities = drag_state.entities
+	local labels = drag_state.labels
+
+	-- Add entity if needed
+	if not labels[entity.unit_number] then
+		table.insert(entities, entity)
+	end
+
+	-- Remove invalid entities
+	validate_entities(drag_state)
+
 	-- Update item counts
-	local base = math.floor(selected_state.item_count / drag_state.num_entities) --[[@as uint]]
-	local remainder = selected_state.item_count % drag_state.num_entities
-	for _, entity_data in pairs(drag_state.entities) do
-		local count = base
-		if remainder > 0 then
-			count = count + 1
-			remainder = remainder - 1
+	local counts = get_even_distribution(selected_state.item_count, #entities)
+	for i = 1, #entities do
+		local entity = entities[i]
+		local label = labels[entity.unit_number]
+		if not label or not rendering.is_valid(label) then
+			label = rendering.draw_text({
+				color = colors.white,
+				players = { e.player_index },
+				surface = entity.surface,
+				target = entity,
+				text = "",
+			})
+			labels[entity.unit_number] = label
 		end
-		entity_data.count = count
-		rendering.set_text(entity_data.label, count)
+		rendering.set_text(label, counts[i])
 	end
 end)
 
---- @param data DragState
-local function finish_drag(data)
-	if not data.player.valid then
+--- @param drag_state DragState
+local function finish_drag(drag_state)
+	if not drag_state.player.valid then
 		return
 	end
-	local item_name = data.item_name
+
+	for _, label in pairs(drag_state.labels) do
+		if rendering.is_valid(label) then
+			rendering.destroy(label)
+		end
+	end
+
+	validate_entities(drag_state)
+
+	local entities = drag_state.entities
+	local num_entities = #entities
+	local total = get_item_count(drag_state.player, drag_state.item_name)
+	local counts = get_even_distribution(total, num_entities)
+	local item_name = drag_state.item_name
 	local item_localised_name = game.item_prototypes[item_name].localised_name
-	for _, entity_data in pairs(data.entities) do
-		rendering.destroy(entity_data.label)
-		if entity_data.count == 0 then
+	for i = 1, num_entities do
+		local entity = entities[i]
+		local to_insert = counts[i]
+
+		-- Insert into entity, remove from player
+		local inserted = entity.insert({ name = item_name, count = to_insert })
+		if inserted == 0 then
 			goto continue
 		end
-		local inserted = entity_data.entity.insert({ name = item_name, count = entity_data.count })
-		local entity = entity_data.entity
+		drag_state.player.remove_item({ name = item_name, count = inserted })
+
+		-- Show flying text
+		local color = colors.white
+		if inserted == 0 then
+			color = colors.red
+		elseif inserted < to_insert then
+			color = colors.yellow
+		end
 		entity.surface.create_entity({
 			name = "flying-text",
-			-- Color yellow if inventory limit was reached
-			color = inserted == entity_data.count and { r = 1, g = 1, b = 1 } or { r = 1, g = 1 },
+			color = color,
 			position = entity.position,
-			render_player_index = data.player.index,
-			text = { "", "-", inserted, " ", item_localised_name },
+			render_player_index = drag_state.player.index,
+			text = { "", -inserted, " ", item_localised_name },
 		})
-		if inserted > 0 then
-			data.player.remove_item({ name = item_name, count = inserted })
-		end
+
 		::continue::
 	end
 end
 
 script.on_event(defines.events.on_tick, function()
-	for player_index, drag_data in pairs(global.drag) do
-		if drag_data.last_tick + 60 <= game.tick then
+	for player_index, drag_state in pairs(global.drag) do
+		if drag_state.last_tick + 60 <= game.tick then
 			global.drag[player_index] = nil
-			finish_drag(drag_data)
+			finish_drag(drag_state)
 		end
 	end
 end)
