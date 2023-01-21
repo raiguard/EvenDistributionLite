@@ -273,6 +273,7 @@ local function finish_drag(drag_state)
 		-- Insert into or remove from entity
 		local delta = 0
 		if to_insert > 0 then
+			--- @cast to_insert uint
 			delta = entity.insert({ name = item_name, count = to_insert })
 		elseif to_insert < 0 then
 			local count = math.abs(to_insert) --[[@as uint]]
