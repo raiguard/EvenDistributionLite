@@ -1,11 +1,11 @@
 local bounding_box = require("__flib__/bounding-box")
 
 --- @class DragState
+--- @field balance boolean
 --- @field entities LuaEntity[]
 --- @field item_name string
 --- @field labels table<uint, uint64>
 --- @field last_tick uint
---- @field mode DistributionMode
 --- @field player LuaPlayer
 
 --- @class LastSelectedState
@@ -89,12 +89,6 @@ local function validate_entities(drag_state)
 	drag_state.entities = entities
 end
 
---- @enum DistributionMode
-local distribution_mode = {
-	balance = 1,
-	even = 2,
-}
-
 script.on_init(function()
 	--- @type table<uint, DragState>
 	global.drag = {}
@@ -177,17 +171,13 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 	-- Create or retrieve drag state
 	local drag_state = global.drag[e.player_index]
 	if not drag_state then
-		local mode = distribution_mode.even
-		if e.is_split then
-			mode = distribution_mode.balance
-		end
 		--- @type DragState
 		drag_state = {
+			balance = e.is_split,
 			entities = {},
 			item_name = selected_state.item_name,
 			last_tick = game.tick,
 			labels = {},
-			mode = mode,
 			player = player,
 		}
 		global.drag[e.player_index] = drag_state
@@ -217,7 +207,7 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 
 	-- Update item counts
 	local total = selected_state.item_count
-	if drag_state.mode == distribution_mode.balance then
+	if drag_state.balance then
 		for i = 1, #entities do
 			total = total + entities[i].get_item_count(drag_state.item_name)
 		end
@@ -228,7 +218,7 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 		local label = labels[entity.unit_number]
 		if not label or not rendering.is_valid(label) then
 			local color = colors.white
-			if drag_state.mode == distribution_mode.balance then
+			if drag_state.balance then
 				color = colors.yellow
 			end
 			label = rendering.draw_text({
@@ -267,10 +257,10 @@ local function finish_drag(drag_state)
 	-- Calculate entity deltas
 	local counts
 	local player_total = drag_state.player.get_item_count(drag_state.item_name)
-	if drag_state.mode == distribution_mode.even then
-		counts = get_even_distribution(player_total, num_entities)
-	elseif drag_state.mode == distribution_mode.balance then
+	if drag_state.balance then
 		counts = get_balanced_distribution(entities, drag_state.item_name, player_total)
+	else
+		counts = get_even_distribution(player_total, num_entities)
 	end
 
 	for i = 1, num_entities do
