@@ -163,6 +163,9 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
 			cursor_stack.set_stack(spec)
 			player.hand_location = selected_state.hand_location
 		end
+	elseif entity.get_item_count(selected_state.item_name) == 0 then
+		-- This item can't be inserted at all
+		return
 	else
 		-- The base game won't play the sound, so we have to
 		player.play_sound({ path = "utility/inventory_move" })
