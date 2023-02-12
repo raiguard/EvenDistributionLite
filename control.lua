@@ -305,8 +305,8 @@ local function finish_drag(drag_state)
 end
 
 script.on_event(defines.events.on_tick, function()
-	local ticks = settings.startup["edl-ticks"].value
 	for player_index, drag_state in pairs(global.drag) do
+		local ticks = drag_state.player.mod_settings["edl-ticks"].value
 		if drag_state.last_tick + ticks <= game.tick then
 			global.drag[player_index] = nil
 			finish_drag(drag_state)
