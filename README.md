@@ -12,9 +12,3 @@ Distribution](https://mods.factorio.com/mod/even-distribution).
 ## Installation
 
 [Download on the Mod Portal.](https://mods.factorio.com/mod/EvenDistributionLite)
-
-## Contributing
-
-[Report bugs or ask questions](https://lists.sr.ht/~raiguard/factorio-mods-discuss)
-
-[Submit patches](https://lists.sr.ht/~raiguard/factorio-mods-devel)
