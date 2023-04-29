@@ -351,7 +351,6 @@ local function finish_drag(drag_state)
       name = "flying-text",
       color = color,
       position = entity.position,
-      render_player_index = drag_state.player.index,
       text = { "", to_insert > 0 and "-" or "+", delta, " ", item_localised_name },
     })
   end

@@ -1,6 +1,8 @@
 ---------------------------------------------------------------------------------------------------
 Version: 1.1.1
 Date: ????
+  Changes:
+    - Flying texts when finishing a distribution are now visible to all players
   Bugfixes:
     - Fixed that items would be distributed from ammo, armor, gun, and trash inventories (#1)
     - Fixed that items would try to distribute into loaders (#3)
