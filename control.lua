@@ -323,6 +323,7 @@ local function finish_drag(drag_state)
     local entity = entities[i]
     local to_insert = counts[i]
 
+    -- TODO: Item durability
     -- Insert into or remove from entity
     local delta = 0
     if to_insert > 0 then
