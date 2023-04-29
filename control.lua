@@ -76,6 +76,34 @@ local function get_even_distribution(total, num_entities)
   return out
 end
 
+--- @param inventory LuaInventory
+--- @param cursor_stack LuaItemStack
+--- @return uint
+local function get_item_count(inventory, cursor_stack, name)
+  local count = inventory.get_item_count(name)
+  if cursor_stack.valid_for_read and cursor_stack.name == name then
+    count = count + cursor_stack.count
+  end
+  return count
+end
+
+--- @param inventory LuaInventory
+--- @param cursor_stack LuaItemStack
+--- @param name string
+--- @param count uint
+--- @return uint
+local function remove_item(inventory, cursor_stack, name, count)
+  local removed = 0
+  if cursor_stack.valid_for_read and cursor_stack.name == name then
+    removed = math.min(cursor_stack.count, count)
+    cursor_stack.count = cursor_stack.count - removed
+  end
+  if removed < count then
+    inventory.remove({ name = name, count = count - removed })
+  end
+  return removed
+end
+
 --- @param drag_state DragState
 local function validate_entities(drag_state)
   local entities = {}
@@ -108,13 +136,17 @@ script.on_event(defines.events.on_selected_entity_changed, function(e)
     global.last_selected[e.player_index] = nil
     return
   end
+  local main_inventory = player.get_main_inventory()
+  if not main_inventory then
+    return
+  end
 
   --- @type LastSelectedState
   global.last_selected[e.player_index] = {
     cursor_count = cursor_stack.count,
     entity = selected,
     hand_location = player.hand_location,
-    item_count = player.get_item_count(cursor_stack.name),
+    item_count = get_item_count(main_inventory, cursor_stack, cursor_stack.name),
     item_name = cursor_stack.name,
     tick = game.tick,
   }
@@ -150,8 +182,13 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
     return
   end
 
+  local main_inventory = player.get_main_inventory()
+  if not main_inventory then
+    return
+  end
+
   -- Get the number of items that were inserted by the fast transfer
-  local new_count = player.get_item_count(selected_state.item_name)
+  local new_count = get_item_count(main_inventory, cursor_stack, selected_state.item_name)
   local inserted = selected_state.item_count - new_count --[[@as uint]]
   if inserted > 0 then
     -- Remove items from the destination and restore the player's inventory state
@@ -257,9 +294,19 @@ local function finish_drag(drag_state)
   local item_name = drag_state.item_name
   local item_localised_name = game.item_prototypes[item_name].localised_name
 
+  local player = drag_state.player
+  local cursor_stack = player.cursor_stack
+  if not cursor_stack then
+    return
+  end
+  local main_inventory = player.get_main_inventory()
+  if not main_inventory then
+    return
+  end
+
   -- Calculate entity deltas
   local counts
-  local player_total = drag_state.player.get_item_count(drag_state.item_name)
+  local player_total = get_item_count(main_inventory, cursor_stack, item_name)
   if drag_state.balance then
     counts = get_balanced_distribution(entities, drag_state.item_name, player_total)
   else
@@ -282,9 +329,9 @@ local function finish_drag(drag_state)
 
     -- Insert into or remove from player
     if delta > 0 and to_insert > 0 then
-      player_total = player_total - drag_state.player.remove_item({ name = item_name, count = delta })
+      player_total = player_total - remove_item(main_inventory, cursor_stack, item_name, delta)
     elseif delta > 0 then
-      player_total = player_total + drag_state.player.insert({ name = item_name, count = delta })
+      player_total = player_total + player.insert({ name = item_name, count = delta })
     end
 
     -- Show flying text
