@@ -3,6 +3,7 @@ Version: 1.1.1
 Date: ????
   Bugfixes:
     - Fixed that items would be distributed from ammo, armor, gun, and trash inventories (#1)
+    - Fixed that items would try to distribute into loaders (#3)
 ---------------------------------------------------------------------------------------------------
 Version: 1.1.0
 Date: 2023-02-11

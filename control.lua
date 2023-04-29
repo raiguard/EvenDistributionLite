@@ -132,7 +132,13 @@ script.on_event(defines.events.on_selected_entity_changed, function(e)
 
   local selected = player.selected
   local cursor_stack = player.cursor_stack
-  if not selected or not cursor_stack or not cursor_stack.valid_for_read then
+  if
+    not selected
+    or selected.type == "loader"
+    or selected.type == "loader-1x1"
+    or not cursor_stack
+    or not cursor_stack.valid_for_read
+  then
     global.last_selected[e.player_index] = nil
     return
   end
