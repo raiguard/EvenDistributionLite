@@ -6,4 +6,10 @@ data:extend({
     default_value = 60,
     minimum_value = 1,
   },
+  {
+    type = "bool-setting",
+    name = "edl-swap-balance",
+    setting_type = "runtime-per-user",
+    default_value = false,
+  },
 })

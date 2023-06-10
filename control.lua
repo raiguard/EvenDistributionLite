@@ -219,7 +219,7 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
   if not drag_state then
     --- @type DragState
     drag_state = {
-      balance = e.is_split,
+      balance = e.is_split ~= settings.get_player_settings(player)["edl-swap-balance"].value,
       entities = {},
       item_name = selected_state.item_name,
       last_tick = game.tick,
