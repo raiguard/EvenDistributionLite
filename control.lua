@@ -240,16 +240,14 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
     flying_text.destroy()
   end
 
+  validate_entities(drag_state)
+
   local entities = drag_state.entities
   local labels = drag_state.labels
 
-  -- Add entity if needed
   if not labels[entity.unit_number] then
     table.insert(entities, entity)
   end
-
-  -- Remove invalid entities
-  validate_entities(drag_state)
 
   -- Update item counts
   local total = selected_state.item_count
