@@ -346,6 +346,7 @@ local function finish_drag(drag_state)
     elseif delta ~= math.abs(to_insert) then
       color = colors.yellow
     end
+    --- @diagnostic disable-next-line missing-field
     entity.surface.create_entity({
       name = "flying-text",
       color = color,
@@ -370,7 +371,7 @@ script.on_event(defines.events.on_player_cursor_stack_changed, function(e)
   if drag_state.item_name == cursor_item then
     return
   end
-  
+
   global.drag[e.player_index] = nil
   finish_drag(drag_state)
 end)
