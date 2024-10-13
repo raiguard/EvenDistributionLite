@@ -21,13 +21,17 @@ local colors = {
 }
 
 --- @type table<string, defines.inventory[]>
-local fast_transfer_inventories = {
+local entity_transfer_inventories = {
   ["ammo-turret"] = defines.inventory.turret_ammo,
   ["artillery-turret"] = { defines.inventory.artillery_turret_ammo },
   ["artillery-wagon"] = { defines.inventory.artillery_wagon_ammo },
-  ["assembling-machine"] = { defines.inventory.assembling_machine_input, defines.inventory.assembling_machine_modules },
-  ["beacon"] = { defines.inventory.beacon_modules },
-  ["car"] = { defines.inventory.car_trunk, defines.inventory.car_trunk },
+  ["assembling-machine"] = {
+    defines.inventory.assembling_machine_input,
+    defines.inventory.assembling_machine_modules,
+    defines.inventory.fuel,
+  },
+  ["beacon"] = { defines.inventory.beacon_modules, defines.inventory.fuel },
+  ["car"] = { defines.inventory.car_ammo, defines.inventory.car_trunk, defines.inventory.fuel },
   ["cargo-landing-pad"] = { defines.inventory.cargo_landing_pad_main },
   ["cargo-wagon"] = { defines.inventory.cargo_wagon },
   ["character"] = {
@@ -38,26 +42,186 @@ local fast_transfer_inventories = {
     defines.inventory.character_vehicle,
   },
   ["container"] = { defines.inventory.chest },
-  ["furnace"] = { defines.inventory.furnace_source, defines.inventory.furnace_modules },
-  ["lab"] = { defines.inventory.lab_input, defines.inventory.lab_modules },
+  ["furnace"] = { defines.inventory.furnace_source, defines.inventory.furnace_modules, defines.inventory.fuel },
+  ["lab"] = { defines.inventory.lab_input, defines.inventory.lab_modules, defines.inventory.fuel },
   ["logistic-container"] = { defines.inventory.chest },
-  ["mining-drill"] = { defines.inventory.mining_drill_modules },
-  ["roboport"] = { defines.inventory.roboport_material, defines.inventory.roboport_robot },
+  ["mining-drill"] = { defines.inventory.mining_drill_modules, defines.inventory.fuel },
+  ["roboport"] = { defines.inventory.roboport_material, defines.inventory.roboport_robot, defines.inventory.fuel },
   ["rocket-silo"] = {
     defines.inventory.rocket_silo_input,
     defines.inventory.rocket_silo_rocket,
     defines.inventory.rocket_silo_modules,
+    defines.inventory.fuel,
   },
   ["space-platform-hub"] = { defines.inventory.hub_main },
-  ["spidertron"] = { defines.inventory.spider_ammo, defines.inventory.spider_trunk },
+  ["spidertron"] = { defines.inventory.spider_ammo, defines.inventory.spider_trunk, defines.inventory.fuel },
 }
+
+--- @type table<defines.controllers, defines.inventory[]>
+local player_transfer_inventories = {
+  [defines.controllers.character] = {
+    defines.inventory.character_ammo,
+    defines.inventory.character_armor,
+    defines.inventory.character_guns,
+    defines.inventory.character_main,
+    defines.inventory.character_vehicle,
+  },
+  [defines.controllers.cutscene] = {},
+  [defines.controllers.editor] = {
+    defines.inventory.editor_ammo,
+    defines.inventory.editor_armor,
+    defines.inventory.editor_guns,
+    defines.inventory.editor_main,
+  },
+  [defines.controllers.ghost] = {},
+  [defines.controllers.god] = { defines.inventory.god_main },
+  [defines.controllers.remote] = {},
+  [defines.controllers.spectator] = {},
+}
+
+local complex_items = {
+  ["item-with-entity-data"] = true,
+  ["armor"] = true,
+  ["spidertron-remote"] = true,
+  ["blueprint"] = true,
+  ["blueprint-book"] = true,
+  ["upgrade-planner"] = true,
+  ["deconstruction-planner"] = true,
+}
+
+--- @alias TransferTarget LuaPlayer|LuaEntity
+
+--- @param target TransferTarget
+--- @return defines.inventory[]
+local function get_transfer_inventories(target)
+  if target.object_name == "LuaEntity" then
+    return entity_transfer_inventories[target.type]
+  elseif target.object_name == "LuaPlayer" then
+    return player_transfer_inventories[target.controller_type]
+  else
+    error("Invalid transfer target type " .. target.object_name) --- @diagnostic disable-line: undefined-field
+  end
+end
+
+--- @param target TransferTarget
+--- @return fun(): LuaInventory?
+local function inventory_iterator(target)
+  local inventories = get_transfer_inventories(target)
+  local i = 0
+  return function()
+    i = i + 1
+    local inventory_type = inventories[i]
+    if not inventory_type then
+      return nil
+    end
+    return target.get_inventory(inventory_type)
+  end
+end
+
+--- @param from TransferTarget
+--- @param to TransferTarget
+--- @param spec ItemStackDefinition
+--- @return uint transferred
+local function transfer(from, to, spec)
+  local from_inventories = inventory_iterator(from)
+  local to_inventories = inventory_iterator(to)
+
+  local from_cursor_stack, to_cursor_stack
+  local from_cursor_stack_exhausted, to_cursor_stack_exhausted
+  if from.object_name == "LuaPlayer" then
+    from_cursor_stack = from.cursor_stack
+  end
+  if to.object_name == "LuaPlayer" then
+    to_cursor_stack = to.cursor_stack
+  end
+
+  local transferred = 0
+  local id = { name = spec.name, quality = spec.quality }
+
+  local from_inventory = from_inventories()
+  local to_inventory = to_inventories()
+  while from_inventory and to_inventory and transferred < spec.count do
+    local source_stack
+    if from_cursor_stack and not from_cursor_stack_exhausted then
+      source_stack = from_cursor_stack
+    else
+      source_stack = from_inventory.find_item_stack(id)
+    end
+
+    if
+      source_stack
+      and not from_cursor_stack_exhausted
+      and (
+        not source_stack.valid_for_read or (source_stack.name ~= spec.name or source_stack.quality.name ~= spec.quality)
+      )
+    then
+      from_cursor_stack_exhausted = true
+      goto continue
+    end
+
+    if not source_stack then
+      from_inventory = from_inventories()
+      goto continue
+    end
+
+    if to_cursor_stack and not to_cursor_stack_exhausted then
+      if not to_cursor_stack.valid_for_read then
+        to_cursor_stack.transfer_stack(source_stack)
+        to_cursor_stack_exhausted = true
+        if source_stack == from_cursor_stack and not source_stack.valid_for_read then
+          from_cursor_stack_exhausted = true
+        end
+        goto continue
+      end
+    end
+
+    if not to_inventory.can_insert(id) then
+      to_inventory = to_inventories()
+      goto continue
+    end
+
+    if complex_items[source_stack.type] then
+      local empty_slot = to_inventory.find_empty_stack(id)
+      if not empty_slot then
+        to_inventory = to_inventories()
+        goto continue
+      end
+      assert(empty_slot.transfer_stack(source_stack), "Transfer of full stack failed")
+      transferred = transferred + empty_slot.count
+    else
+      --- @type SimpleItemStack
+      local this_spec = {
+        name = source_stack.name,
+        quality = source_stack.quality.name,
+        count = math.min(source_stack.count, spec.count - transferred),
+        health = source_stack.health,
+        durability = source_stack.type == "tool" and source_stack.durability or nil,
+        ammo = source_stack.type == "ammo" and source_stack.ammo or nil,
+        tags = source_stack.type == "item-with-tags" and source_stack.tags or nil,
+        custom_description = source_stack.type == "item-with-tags" and source_stack.custom_description or nil,
+        spoil_percent = source_stack.spoil_percent,
+      }
+      local this_transferred = to_inventory.insert(this_spec)
+      source_stack.count = source_stack.count - this_transferred
+      transferred = transferred + this_transferred
+    end
+
+    if source_stack == from_cursor_stack and not source_stack.valid_for_read then
+      from_cursor_stack_exhausted = true
+    end
+
+    ::continue::
+  end
+
+  return transferred
+end
 
 --- @param entity LuaEntity
 --- @param item ItemIDAndQualityIDPair
 --- @return uint
 local function get_entity_item_count(entity, item)
   local total = 0
-  local inventories = fast_transfer_inventories[entity.type]
+  local inventories = entity_transfer_inventories[entity.type]
   assert(inventories, "Entity inventories were nil")
   for _, inventory_type in pairs(inventories) do
     local inventory = entity.get_inventory(inventory_type)
@@ -133,22 +297,22 @@ local function get_item_count(inventory, cursor_stack, item)
   return count
 end
 
---- @param inventory LuaInventory
---- @param cursor_stack LuaItemStack
---- @param name string
---- @param count uint
---- @return uint
-local function remove_item(inventory, cursor_stack, name, count)
-  local removed = 0
-  if cursor_stack.valid_for_read and cursor_stack.name == name then
-    removed = math.min(cursor_stack.count, count)
-    cursor_stack.count = cursor_stack.count - removed
-  end
-  if removed < count then
-    inventory.remove({ name = name, count = count - removed })
-  end
-  return removed
-end
+-- --- @param inventory LuaInventory
+-- --- @param cursor_stack LuaItemStack
+-- --- @param name string
+-- --- @param count uint
+-- --- @return uint
+-- local function remove_item(inventory, cursor_stack, name, count)
+--   local removed = 0
+--   if cursor_stack.valid_for_read and cursor_stack.name == name then
+--     removed = math.min(cursor_stack.count, count)
+--     cursor_stack.count = cursor_stack.count - removed
+--   end
+--   if removed < count then
+--     inventory.remove({ name = name, count = count - removed })
+--   end
+--   return removed
+-- end
 
 --- @param drag_state DragState
 local function validate_entities(drag_state)
@@ -251,15 +415,8 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
   local inserted = selected_state.item.count - new_count
   if inserted > 0 then
     -- Remove items from the destination and restore the player's inventory state
-    local spec = { name = selected_state.item.name, quality = selected_state.item.quality, count = inserted }
-    entity.remove_item(spec)
-    if cursor_stack.valid_for_read then
-      player.insert(spec)
-    else
-      cursor_stack.set_stack(spec)
-
-      player.hand_location = selected_state.hand_location
-    end
+    local item = { name = selected_state.item.name, quality = selected_state.item.quality, count = inserted }
+    transfer(entity, player, item)
   elseif
     get_entity_item_count(entity, { name = selected_state.item.name, quality = selected_state.item.quality }) == 0
   then
@@ -376,35 +533,38 @@ local function finish_drag(drag_state)
     local entity = entities[i]
     local to_insert = counts[i]
 
-    -- TODO: Item durability
-    -- FIXME: Spoilage!!! Entity info!!! This is trash!!!
-    -- Insert into or remove from entity
-    local delta = 0
-    if to_insert > 0 then
-      --- @cast to_insert uint
-      delta = entity.insert({ name = item.name, count = to_insert, quality = item.quality })
-    elseif to_insert < 0 then
-      local count = math.abs(to_insert) --[[@as uint]]
-      delta = entity.remove_item({ name = item.name, count = count, quality = item.quality })
-    end
+    local item = { name = item.name, count = to_insert, quality = item.quality }
+    local transferred = transfer(player, entity, item)
 
-    -- Insert into or remove from player
-    if delta > 0 and to_insert > 0 then
-      player_total = player_total - remove_item(main_inventory, cursor_stack, item.name, delta)
-    elseif delta > 0 then
-      player_total = player_total + player.insert({ name = item.name, count = delta, quality = item.quality })
-    end
+    -- -- TODO: Item durability
+    -- -- FIXME: Spoilage!!! Entity info!!! This is trash!!!
+    -- -- Insert into or remove from entity
+    -- local delta = 0
+    -- if to_insert > 0 then
+    --   --- @cast to_insert uint
+    --   delta = entity.insert({ name = item.name, count = to_insert, quality = item.quality })
+    -- elseif to_insert < 0 then
+    --   local count = math.abs(to_insert) --[[@as uint]]
+    --   delta = entity.remove_item({ name = item.name, count = count, quality = item.quality })
+    -- end
+
+    -- -- Insert into or remove from player
+    -- if delta > 0 and to_insert > 0 then
+    --   player_total = player_total - remove_item(main_inventory, cursor_stack, item.name, delta)
+    -- elseif delta > 0 then
+    --   player_total = player_total + player.insert({ name = item.name, count = delta, quality = item.quality })
+    -- end
 
     -- Show flying text
     local color = colors.white
-    if delta == 0 then
+    if transferred == 0 then
       color = colors.red
-    elseif delta ~= math.abs(to_insert) then
+    elseif transferred ~= math.abs(to_insert) then
       color = colors.yellow
     end
     --- @diagnostic disable-next-line missing-field
     player.create_local_flying_text({
-      text = { "", to_insert > 0 and "-" or "+", delta, " [item=", item.name, "] ", item_localised_name },
+      text = { "", to_insert > 0 and "-" or "+", transferred, " [item=", item.name, "] ", item_localised_name },
       position = entity.position,
       color = color,
     })
