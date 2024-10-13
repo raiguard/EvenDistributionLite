@@ -1,9 +1,7 @@
-local bounding_box = require("__flib__/bounding-box")
-
 --- @class DragState
 --- @field balance boolean
 --- @field entities LuaEntity[]
---- @field item_name string
+--- @field item {name: string, quality: string}
 --- @field labels table<uint, LuaRenderObject>
 --- @field last_tick uint
 --- @field player LuaPlayer
@@ -12,8 +10,7 @@ local bounding_box = require("__flib__/bounding-box")
 --- @field cursor_count uint
 --- @field entity LuaEntity
 --- @field hand_location ItemStackLocation
---- @field item_count uint
---- @field item_name string
+--- @field item ItemStackDefinition
 --- @field tick uint
 
 --- @type table<string, Color>
@@ -23,11 +20,32 @@ local colors = {
   yellow = { r = 1, g = 1 },
 }
 
+local inventories = {
+  ["assembling-machine"] = {
+    defines.inventory.assembling_machine_input,
+    defines.inventory.assembling_machine_modules,
+  },
+}
+
+--- @param entity LuaEntity
+--- @param item ItemIDAndQualityIDPair
+--- @return uint
+local function get_entity_item_count(entity, item)
+  local total = 0
+  for _, inventory_type in pairs(inventories[entity.type] or {}) do
+    local inventory = entity.get_inventory(inventory_type)
+    if inventory then
+      total = total + inventory.get_item_count(item)
+    end
+  end
+  return total
+end
+
 --- @param entities LuaEntity[]
---- @param item_name string
+--- @param item ItemIDAndQualityIDPair
 --- @param player_total uint
 --- @return integer[]
-local function get_balanced_distribution(entities, item_name, player_total)
+local function get_balanced_distribution(entities, item, player_total)
   local num_entities = #entities
 
   -- Determine total and individual entity contents
@@ -35,7 +53,7 @@ local function get_balanced_distribution(entities, item_name, player_total)
   local entity_counts = {}
   local total = player_total
   for i = 1, num_entities do
-    local count = entities[i].get_item_count(item_name)
+    local count = get_entity_item_count(entities[i], item)
     entity_counts[i] = count
     total = total + count
   end
@@ -78,10 +96,11 @@ end
 
 --- @param inventory LuaInventory
 --- @param cursor_stack LuaItemStack
+--- @param item ItemIDAndQualityIDPair
 --- @return uint
-local function get_item_count(inventory, cursor_stack, name)
-  local count = inventory.get_item_count(name)
-  if cursor_stack.valid_for_read and cursor_stack.name == name then
+local function get_item_count(inventory, cursor_stack, item)
+  local count = inventory.get_item_count(item)
+  if cursor_stack.valid_for_read and cursor_stack.name == item.name and cursor_stack.quality.name == item.quality then
     count = count + cursor_stack.count
   end
   return count
@@ -152,8 +171,15 @@ script.on_event(defines.events.on_selected_entity_changed, function(e)
     cursor_count = cursor_stack.count,
     entity = selected,
     hand_location = player.hand_location,
-    item_count = get_item_count(main_inventory, cursor_stack, cursor_stack.name),
-    item_name = cursor_stack.name,
+    item = {
+      name = cursor_stack.name,
+      quality = cursor_stack.quality.name,
+      count = get_item_count(
+        main_inventory,
+        cursor_stack,
+        { name = cursor_stack.name, quality = cursor_stack.quality.name }
+      ),
+    },
     tick = game.tick,
   }
 end)
@@ -194,19 +220,22 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
   end
 
   -- Get the number of items that were inserted by the fast transfer
-  local new_count = get_item_count(main_inventory, cursor_stack, selected_state.item_name)
-  local inserted = selected_state.item_count - new_count --[[@as uint]]
+  local new_count = get_item_count(main_inventory, cursor_stack, selected_state.item --[[@as ItemIDAndQualityIDPair]])
+  local inserted = selected_state.item.count - new_count
   if inserted > 0 then
     -- Remove items from the destination and restore the player's inventory state
-    local spec = { name = selected_state.item_name, count = inserted }
+    local spec = { name = selected_state.item.name, quality = selected_state.item.quality, count = inserted }
     entity.remove_item(spec)
     if cursor_stack.valid_for_read then
       player.insert(spec)
     else
       cursor_stack.set_stack(spec)
+
       player.hand_location = selected_state.hand_location
     end
-  elseif entity.get_item_count(selected_state.item_name) == 0 then
+  elseif
+    get_entity_item_count(entity, { name = selected_state.item.name, quality = selected_state.item.quality }) == 0
+  then
     -- This item can't be inserted at all
     return
   end
@@ -218,7 +247,7 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
     drag_state = {
       balance = e.is_split ~= settings.get_player_settings(player)["edl-swap-balance"].value,
       entities = {},
-      item_name = selected_state.item_name,
+      item = { name = selected_state.item.name, quality = selected_state.item.quality },
       last_tick = game.tick,
       labels = {},
       player = player,
@@ -243,10 +272,11 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
   end
 
   -- Update item counts
-  local total = selected_state.item_count
+  local total = selected_state.item.count
+  --- @cast total -?
   if drag_state.balance then
     for i = 1, #entities do
-      total = total + entities[i].get_item_count(drag_state.item_name)
+      total = total + get_entity_item_count(entities[i], drag_state.item)
     end
   end
   local counts = get_even_distribution(total, #entities)
@@ -290,8 +320,11 @@ local function finish_drag(drag_state)
 
   local entities = drag_state.entities
   local num_entities = #entities
-  local item_name = drag_state.item_name
-  local item_localised_name = prototypes.item[item_name].localised_name
+  local item = drag_state.item
+  local item_localised_name = prototypes.item[item.name].localised_name
+  if item.quality ~= "normal" then
+    item_localised_name = { "", item_localised_name, " (", prototypes.quality[item.quality].localised_name, ")" }
+  end
 
   local player = drag_state.player
   local cursor_stack = player.cursor_stack
@@ -305,9 +338,9 @@ local function finish_drag(drag_state)
 
   -- Calculate entity deltas
   local counts
-  local player_total = get_item_count(main_inventory, cursor_stack, item_name)
+  local player_total = get_item_count(main_inventory, cursor_stack, item)
   if drag_state.balance then
-    counts = get_balanced_distribution(entities, drag_state.item_name, player_total)
+    counts = get_balanced_distribution(entities, item, player_total)
   else
     counts = get_even_distribution(player_total, num_entities)
   end
@@ -322,17 +355,17 @@ local function finish_drag(drag_state)
     local delta = 0
     if to_insert > 0 then
       --- @cast to_insert uint
-      delta = entity.insert({ name = item_name, count = to_insert })
+      delta = entity.insert({ name = item.name, count = to_insert, quality = item.quality })
     elseif to_insert < 0 then
       local count = math.abs(to_insert) --[[@as uint]]
-      delta = entity.remove_item({ name = item_name, count = count })
+      delta = entity.remove_item({ name = item.name, count = count, quality = item.quality })
     end
 
     -- Insert into or remove from player
     if delta > 0 and to_insert > 0 then
-      player_total = player_total - remove_item(main_inventory, cursor_stack, item_name, delta)
+      player_total = player_total - remove_item(main_inventory, cursor_stack, item.name, delta)
     elseif delta > 0 then
-      player_total = player_total + player.insert({ name = item_name, count = delta })
+      player_total = player_total + player.insert({ name = item.name, count = delta, quality = item.quality })
     end
 
     -- Show flying text
@@ -344,7 +377,7 @@ local function finish_drag(drag_state)
     end
     --- @diagnostic disable-next-line missing-field
     player.create_local_flying_text({
-      text = { "", to_insert > 0 and "-" or "+", delta, " ", item_localised_name },
+      text = { "", to_insert > 0 and "-" or "+", delta, " [item=", item.name, "] ", item_localised_name },
       position = entity.position,
       color = color,
     })
@@ -363,7 +396,7 @@ script.on_event(defines.events.on_player_cursor_stack_changed, function(e)
 
   local cursor_stack = drag_state.player.cursor_stack
   local cursor_item = cursor_stack and cursor_stack.valid_for_read and cursor_stack.name
-  if drag_state.item_name == cursor_item then
+  if drag_state.item.name == cursor_item then
     return
   end
 
