@@ -20,11 +20,36 @@ local colors = {
   yellow = { r = 1, g = 1 },
 }
 
-local inventories = {
-  ["assembling-machine"] = {
-    defines.inventory.assembling_machine_input,
-    defines.inventory.assembling_machine_modules,
+--- @type table<string, defines.inventory[]>
+local fast_transfer_inventories = {
+  ["ammo-turret"] = defines.inventory.turret_ammo,
+  ["artillery-turret"] = { defines.inventory.artillery_turret_ammo },
+  ["artillery-wagon"] = { defines.inventory.artillery_wagon_ammo },
+  ["assembling-machine"] = { defines.inventory.assembling_machine_input, defines.inventory.assembling_machine_modules },
+  ["beacon"] = { defines.inventory.beacon_modules },
+  ["car"] = { defines.inventory.car_trunk, defines.inventory.car_trunk },
+  ["cargo-landing-pad"] = { defines.inventory.cargo_landing_pad_main },
+  ["cargo-wagon"] = { defines.inventory.cargo_wagon },
+  ["character"] = {
+    defines.inventory.character_ammo,
+    defines.inventory.character_armor,
+    defines.inventory.character_guns,
+    defines.inventory.character_main,
+    defines.inventory.character_vehicle,
   },
+  ["container"] = { defines.inventory.chest },
+  ["furnace"] = { defines.inventory.furnace_source, defines.inventory.furnace_modules },
+  ["lab"] = { defines.inventory.lab_input, defines.inventory.lab_modules },
+  ["logistic-container"] = { defines.inventory.chest },
+  ["mining-drill"] = { defines.inventory.mining_drill_modules },
+  ["roboport"] = { defines.inventory.roboport_material, defines.inventory.roboport_robot },
+  ["rocket-silo"] = {
+    defines.inventory.rocket_silo_input,
+    defines.inventory.rocket_silo_rocket,
+    defines.inventory.rocket_silo_modules,
+  },
+  ["space-platform-hub"] = { defines.inventory.hub_main },
+  ["spidertron"] = { defines.inventory.spider_ammo, defines.inventory.spider_trunk },
 }
 
 --- @param entity LuaEntity
@@ -32,7 +57,9 @@ local inventories = {
 --- @return uint
 local function get_entity_item_count(entity, item)
   local total = 0
-  for _, inventory_type in pairs(inventories[entity.type] or {}) do
+  local inventories = fast_transfer_inventories[entity.type]
+  assert(inventories, "Entity inventories were nil")
+  for _, inventory_type in pairs(inventories) do
     local inventory = entity.get_inventory(inventory_type)
     if inventory then
       total = total + inventory.get_item_count(item)
