@@ -4,7 +4,7 @@ local bounding_box = require("__flib__/bounding-box")
 --- @field balance boolean
 --- @field entities LuaEntity[]
 --- @field item_name string
---- @field labels table<uint, uint64>
+--- @field labels table<uint, LuaRenderObject>
 --- @field last_tick uint
 --- @field player LuaPlayer
 
@@ -119,9 +119,9 @@ end
 
 script.on_init(function()
   --- @type table<uint, DragState>
-  global.drag = {}
+  storage.drag = {}
   --- @type table<uint, LastSelectedState>
-  global.last_selected = {}
+  storage.last_selected = {}
 end)
 
 script.on_event(defines.events.on_selected_entity_changed, function(e)
@@ -139,7 +139,7 @@ script.on_event(defines.events.on_selected_entity_changed, function(e)
     or not cursor_stack
     or not cursor_stack.valid_for_read
   then
-    global.last_selected[e.player_index] = nil
+    storage.last_selected[e.player_index] = nil
     return
   end
   local main_inventory = player.get_main_inventory()
@@ -148,7 +148,7 @@ script.on_event(defines.events.on_selected_entity_changed, function(e)
   end
 
   --- @type LastSelectedState
-  global.last_selected[e.player_index] = {
+  storage.last_selected[e.player_index] = {
     cursor_count = cursor_stack.count,
     entity = selected,
     hand_location = player.hand_location,
@@ -168,7 +168,7 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
     return
   end
 
-  local selected_state = global.last_selected[e.player_index]
+  local selected_state = storage.last_selected[e.player_index]
   if
     not selected_state
     or selected_state.tick ~= game.tick
@@ -215,7 +215,7 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
   end
 
   -- Create or retrieve drag state
-  local drag_state = global.drag[e.player_index]
+  local drag_state = storage.drag[e.player_index]
   if not drag_state then
     --- @type DragState
     drag_state = {
@@ -226,26 +226,22 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
       labels = {},
       player = player,
     }
-    global.drag[e.player_index] = drag_state
+    storage.drag[e.player_index] = drag_state
   end
 
   drag_state.last_tick = game.tick
 
-  -- Destroy flying text from transfer
-  local flying_text = entity.surface.find_entities_filtered({
-    name = "flying-text",
-    area = bounding_box.recenter_on(entity.prototype.selection_box, entity.position),
-  })[1]
-  if flying_text then
-    flying_text.destroy()
-  end
+  -- Remove game-generated flying text.
+  player.clear_local_flying_texts()
 
   validate_entities(drag_state)
 
   local entities = drag_state.entities
   local labels = drag_state.labels
+  local unit_number = entity.unit_number
+  --- @cast unit_number -?
 
-  if not labels[entity.unit_number] then
+  if not labels[unit_number] then
     table.insert(entities, entity)
   end
 
@@ -259,8 +255,10 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
   local counts = get_even_distribution(total, #entities)
   for i = 1, #entities do
     local entity = entities[i]
-    local label = labels[entity.unit_number]
-    if not label or not rendering.is_valid(label) then
+    local unit_number = entity.unit_number
+    --- @cast unit_number -?
+    local label = labels[unit_number]
+    if not label or not label.valid then
       local color = colors.white
       if drag_state.balance then
         color = colors.yellow
@@ -272,9 +270,9 @@ script.on_event(defines.events.on_player_fast_transferred, function(e)
         target = entity,
         text = "",
       })
-      labels[entity.unit_number] = label
+      labels[unit_number] = label
     end
-    rendering.set_text(label, counts[i])
+    label.text = counts[i]
   end
 end)
 
@@ -286,8 +284,8 @@ local function finish_drag(drag_state)
 
   -- Destroy labels
   for _, label in pairs(drag_state.labels) do
-    if rendering.is_valid(label) then
-      rendering.destroy(label)
+    if label.valid then
+      label.destroy()
     end
   end
 
@@ -296,7 +294,7 @@ local function finish_drag(drag_state)
   local entities = drag_state.entities
   local num_entities = #entities
   local item_name = drag_state.item_name
-  local item_localised_name = game.item_prototypes[item_name].localised_name
+  local item_localised_name = prototypes.item[item_name].localised_name
 
   local player = drag_state.player
   local cursor_stack = player.cursor_stack
@@ -322,6 +320,7 @@ local function finish_drag(drag_state)
     local to_insert = counts[i]
 
     -- TODO: Item durability
+    -- FIXME: Spoilage!!! Entity info!!! This is trash!!!
     -- Insert into or remove from entity
     local delta = 0
     if to_insert > 0 then
@@ -347,17 +346,16 @@ local function finish_drag(drag_state)
       color = colors.yellow
     end
     --- @diagnostic disable-next-line missing-field
-    entity.surface.create_entity({
-      name = "flying-text",
-      color = color,
-      position = entity.position,
+    player.create_local_flying_text({
       text = { "", to_insert > 0 and "-" or "+", delta, " ", item_localised_name },
+      position = entity.position,
+      color = color,
     })
   end
 end
 
 script.on_event(defines.events.on_player_cursor_stack_changed, function(e)
-  local drag_state = global.drag[e.player_index]
+  local drag_state = storage.drag[e.player_index]
   if not drag_state then
     return
   end
@@ -372,17 +370,17 @@ script.on_event(defines.events.on_player_cursor_stack_changed, function(e)
     return
   end
 
-  global.drag[e.player_index] = nil
+  storage.drag[e.player_index] = nil
   finish_drag(drag_state)
 end)
 
 script.on_event(defines.events.on_tick, function()
-  for player_index, drag_state in pairs(global.drag) do
+  for player_index, drag_state in pairs(storage.drag) do
     local clear_cursor = drag_state.player.mod_settings["edl-clear-cursor"].value
     if not clear_cursor then
       local ticks = drag_state.player.mod_settings["edl-ticks"].value
       if drag_state.last_tick + ticks <= game.tick then
-        global.drag[player_index] = nil
+        storage.drag[player_index] = nil
         finish_drag(drag_state)
       end
     end
