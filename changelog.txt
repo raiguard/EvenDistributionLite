@@ -3,6 +3,7 @@ Version: 1.4.0
 Date: ????
   Changes:
     - Updated to Factorio 2.0
+    - Removed dependency on flib.
   Bugfixes:
     - Fixed that extra item data (ammo count, durability, spoilage, quality) would be lost when evenly distributing. (#13)
 ---------------------------------------------------------------------------------------------------
