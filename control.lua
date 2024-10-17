@@ -92,7 +92,7 @@ local complex_items = {
 --- @alias TransferTarget LuaPlayer|LuaEntity
 
 --- @param target TransferTarget
---- @return defines.inventory[]
+--- @return defines.inventory[]?
 local function get_transfer_inventories(target)
   if target.object_name == "LuaEntity" then
     return entity_transfer_inventories[target.type]
@@ -106,7 +106,7 @@ end
 --- @param target TransferTarget
 --- @return fun(): LuaInventory?
 local function inventory_iterator(target)
-  local inventories = get_transfer_inventories(target)
+  local inventories = get_transfer_inventories(target) or {}
   local i = 0
   return function()
     i = i + 1
@@ -222,7 +222,9 @@ end
 local function get_entity_item_count(entity, item)
   local total = 0
   local inventories = entity_transfer_inventories[entity.type]
-  assert(inventories, "Entity inventories were nil")
+  if not inventories then
+    return 0
+  end
   for _, inventory_type in pairs(inventories) do
     local inventory = entity.get_inventory(inventory_type)
     if inventory then
