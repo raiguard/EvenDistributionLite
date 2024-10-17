@@ -22,7 +22,7 @@ local colors = {
 
 --- @type table<string, defines.inventory[]>
 local entity_transfer_inventories = {
-  ["ammo-turret"] = defines.inventory.turret_ammo,
+  ["ammo-turret"] = { defines.inventory.turret_ammo },
   ["artillery-turret"] = { defines.inventory.artillery_turret_ammo },
   ["artillery-wagon"] = { defines.inventory.artillery_wagon_ammo },
   ["assembling-machine"] = {
@@ -60,7 +60,7 @@ local entity_transfer_inventories = {
 --- @type table<defines.controllers, defines.inventory[]>
 local player_transfer_inventories = {
   [defines.controllers.character] = {
-    defines.inventory.character_ammo,
+    -- defines.inventory.character_ammo,
     defines.inventory.character_armor,
     defines.inventory.character_guns,
     defines.inventory.character_main,
@@ -68,7 +68,7 @@ local player_transfer_inventories = {
   },
   [defines.controllers.cutscene] = {},
   [defines.controllers.editor] = {
-    defines.inventory.editor_ammo,
+    -- defines.inventory.editor_ammo,
     defines.inventory.editor_armor,
     defines.inventory.editor_guns,
     defines.inventory.editor_main,
