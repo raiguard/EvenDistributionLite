@@ -1,7 +1,8 @@
 ---------------------------------------------------------------------------------------------------
 Version: 1.4.1
 Date: ????
-  Changes:
+  Bugfixes:
+    - Fixed even distribution not working on boilers, burner generators, fusion generators, or locomotives.
 ---------------------------------------------------------------------------------------------------
 Version: 1.4.0
 Date: 2024-10-17
