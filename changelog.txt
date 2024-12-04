@@ -1,6 +1,8 @@
 ---------------------------------------------------------------------------------------------------
 Version: 1.4.2
 Date: ????
+  Changes:
+    - Clearing the cursor will immediately initiate the distribution even if "wait for cursor clear" isn't enabled.
   Bugfixes:
     - Fixed the "balance inventories" functionality not removing extraneous items. (#14)
 ---------------------------------------------------------------------------------------------------

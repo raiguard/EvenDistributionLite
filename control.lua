@@ -554,10 +554,6 @@ script.on_event(defines.events.on_player_cursor_stack_changed, function(e)
     return
   end
 
-  if not drag_state.player.mod_settings["edl-clear-cursor"].value then
-    return
-  end
-
   local cursor_stack = drag_state.player.cursor_stack
   local cursor_item = cursor_stack and cursor_stack.valid_for_read and cursor_stack.name
   if drag_state.item.name == cursor_item then
@@ -570,9 +566,9 @@ end)
 
 script.on_event(defines.events.on_tick, function()
   for player_index, drag_state in pairs(storage.drag) do
-    local clear_cursor = drag_state.player.mod_settings["edl-clear-cursor"].value
+    local clear_cursor = drag_state.player.mod_settings["edl-clear-cursor"].value --[[@as boolean]]
     if not clear_cursor then
-      local ticks = drag_state.player.mod_settings["edl-ticks"].value
+      local ticks = drag_state.player.mod_settings["edl-ticks"].value --[[@as int]]
       if drag_state.last_tick + ticks <= game.tick then
         storage.drag[player_index] = nil
         finish_drag(drag_state)
