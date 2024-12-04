@@ -127,6 +127,13 @@ end
 --- @param spec ItemStackDefinition
 --- @return uint transferred
 local function transfer(from, to, spec)
+  if spec.count < 0 then
+    spec.count = math.abs(spec.count)
+    local temp = from
+    from = to
+    to = temp
+  end
+
   local from_inventories = inventory_iterator(from)
   local to_inventories = inventory_iterator(to)
 
@@ -302,23 +309,6 @@ local function get_item_count(inventory, cursor_stack, item)
   end
   return count
 end
-
--- --- @param inventory LuaInventory
--- --- @param cursor_stack LuaItemStack
--- --- @param name string
--- --- @param count uint
--- --- @return uint
--- local function remove_item(inventory, cursor_stack, name, count)
---   local removed = 0
---   if cursor_stack.valid_for_read and cursor_stack.name == name then
---     removed = math.min(cursor_stack.count, count)
---     cursor_stack.count = cursor_stack.count - removed
---   end
---   if removed < count then
---     inventory.remove({ name = name, count = count - removed })
---   end
---   return removed
--- end
 
 --- @param drag_state DragState
 local function validate_entities(drag_state)
@@ -541,25 +531,6 @@ local function finish_drag(drag_state)
 
     local item = { name = item.name, count = to_insert, quality = item.quality }
     local transferred = transfer(player, entity, item)
-
-    -- -- TODO: Item durability
-    -- -- FIXME: Spoilage!!! Entity info!!! This is trash!!!
-    -- -- Insert into or remove from entity
-    -- local delta = 0
-    -- if to_insert > 0 then
-    --   --- @cast to_insert uint
-    --   delta = entity.insert({ name = item.name, count = to_insert, quality = item.quality })
-    -- elseif to_insert < 0 then
-    --   local count = math.abs(to_insert) --[[@as uint]]
-    --   delta = entity.remove_item({ name = item.name, count = count, quality = item.quality })
-    -- end
-
-    -- -- Insert into or remove from player
-    -- if delta > 0 and to_insert > 0 then
-    --   player_total = player_total - remove_item(main_inventory, cursor_stack, item.name, delta)
-    -- elseif delta > 0 then
-    --   player_total = player_total + player.insert({ name = item.name, count = delta, quality = item.quality })
-    -- end
 
     -- Show flying text
     local color = colors.white
